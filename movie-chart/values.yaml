@@ -5,7 +5,7 @@
 replicaCount: 3
 
 image:
-  repository: belka75/fastapiappjenkins
+  repository: belka75/movie-service
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: "latest"
@@ -40,7 +40,7 @@ securityContext: {}
 service:
   type: NodePort
   port: 80
-  nodePort: 30007  
+  nodePort: 30011  
   targetPort: 8000
 
 ingress:
@@ -83,3 +83,9 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+env:
+  - name: DATABASE_URI
+    value: postgresql://movie_db_username:movie_db_password@postgres-movie-db:5432/movie_db_devv
+  - name: CAST_SERVICE_HOST_URL
+    value: http://cast-service:8000/api/v1/casts/
