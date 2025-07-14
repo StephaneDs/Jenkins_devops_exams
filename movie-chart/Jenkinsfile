@@ -1,0 +1,85 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKERHUB_USER = 'belka75'
+    IMAGE_NAME = 'movie-service'
+    IMAGE_TAG = "${env.BUILD_NUMBER}"
+    DOCKER_CREDENTIALS_ID = 'DOCKER_HUB_CREDENTIAL'
+    KUBECONFIG_CREDENTIAL_ID = 'config'
+    CHART_NAME = 'movie-chart'
+    CHART_PATH = './movie-chart'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: 'git@github.com:StephaneDs/Jenkins_devops_exams.git'
+      }
+    }
+
+    stage('Build & push docker image') {
+      steps {
+        script {
+          def image = docker.build("${DOCKERHUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}")
+          docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDENTIALS_ID) {
+            image.push()
+          }
+        }
+      }
+    }
+
+    stage('Configure kubeconfig') {
+      steps {
+        withCredentials([file(credentialsId: KUBECONFIG_CREDENTIAL_ID, variable: 'KUBECONFIG_FILE')]) {
+          sh '''
+            mkdir -p $HOME/.kube
+            cp $KUBECONFIG_FILE $HOME/.kube/config
+          '''
+        }
+      }
+    }
+
+    stage('Deploy to dev/qa/staging') {
+      when {
+        anyOf { branch 'dev'; branch 'qa'; branch 'staging' }
+      }
+      steps {
+        script {
+          def ns = "app-${env.BRANCH_NAME}"
+          sh """
+            helm upgrade --install ${CHART_NAME} ${CHART_PATH} \
+              --set image.repository=${DOCKERHUB_USER}/${IMAGE_NAME} \
+              --set image.tag=${IMAGE_TAG} \
+              -n ${ns}
+          """
+        }
+      }
+    }
+
+    stage('Manual approval deploy to Prod') {
+      when { branch 'master' }
+      steps {
+        input message: "Souhaitez-vous déployer movie-service en production ?"
+        sh """
+          helm upgrade --install ${CHART_NAME} ${CHART_PATH} \
+            --set image.repository=${DOCKERHUB_USER}/${IMAGE_NAME} \
+            --set image.tag=${IMAGE_TAG} \
+            -n app-prod
+        """
+      }
+    }
+  }
+
+  post {
+    always {
+    echo "pipeline terminée pour ${IMAGE_NAME} sur ${env.BRANCH_NAME}"
+    }
+    success {
+      echo "Déploiement réussi pour ${IMAGE_NAME}."
+    }
+    failure {
+      echo "Échec du pipeline pour ${IMAGE_NAME}."
+    }
+  }
+}
